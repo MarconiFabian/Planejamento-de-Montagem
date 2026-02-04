@@ -1,10 +1,12 @@
+
+
 import { PipeSegment, StageStatus } from './types';
 
 // Helper to create default stages
 export const createDefaultStages = () => ({
   scaffolding: { id: 'scaf', label: 'Andaime / Acesso', status: StageStatus.NOT_STARTED, icon: 'Scaffold', requiredResources: ['Andaime Tubular', 'Montador x2'] },
   lifting: { id: 'lift', label: 'Içamento / Posicionamento', status: StageStatus.NOT_STARTED, icon: 'Crane', requiredResources: ['Caminhão Munk', 'Rigger'] },
-  welding: { id: 'weld', label: 'Soldagem / Acoplamento', status: StageStatus.NOT_STARTED, icon: 'Flame', requiredResources: ['Soldador TIG/ER', 'Eletrodos 7018'] },
+  welding: { id: 'weld', label: 'Soldagem (Geral)', status: StageStatus.NOT_STARTED, icon: 'Flame', requiredResources: ['Soldador TIG/ER', 'Eletrodos 7018'] },
   inspection: { id: 'insp', label: 'Inspeção de Qualidade', status: StageStatus.NOT_STARTED, icon: 'ShieldCheck', requiredResources: ['Inspetor N1', 'Liquido Penetrante'] },
   hydrotest: { id: 'hydro', label: 'Teste Hidrostático', status: StageStatus.NOT_STARTED, icon: 'Droplet', requiredResources: ['Bomba Teste', 'Manômetro Calibrado'] },
   insulation: { id: 'insul', label: 'Proteção Térmica', status: StageStatus.NOT_STARTED, icon: 'Package', requiredResources: ['Lã de Rocha', 'Funileiro'] },
@@ -62,6 +64,41 @@ export const generateCantileverPath = (x: number, y: number, width: number, heig
     // Removed the horizontal arm as requested.
     return `${post} ${base}`;
 };
+
+export const generateFloatingSupportPath = (x: number, y: number, width: number, height: number) => {
+    // A simple block support that starts at x,y (Top Center) and goes down.
+    // This ensures it behaves like other supports where 'y' is the top contact surface.
+    const halfW = width / 2;
+    // M TopLeft -> TopRight -> BottomRight -> BottomLeft -> Z
+    // Top is at y. Bottom is at y + height.
+    return `M ${x - halfW} ${y} L ${x + halfW} ${y} L ${x + halfW} ${y + height} L ${x - halfW} ${y + height} Z`;
+};
+
+// --- SHAPE GENERATOR LOGIC ---
+export const generateRectanglePath = (x: number, y: number, width: number, height: number) => {
+    // Centered rectangle
+    const halfW = width / 2;
+    const halfH = height / 2;
+    return `M ${x - halfW} ${y - halfH} L ${x + halfW} ${y - halfH} L ${x + halfW} ${y + halfH} L ${x - halfW} ${y + halfH} Z`;
+};
+
+export const generateZonePath = (x: number, y: number, width: number, height: number) => {
+    // Same as rectangle, used for zones
+    const halfW = width / 2;
+    const halfH = height / 2;
+    return `M ${x - halfW} ${y - halfH} L ${x + halfW} ${y - halfH} L ${x + halfW} ${y + halfH} L ${x - halfW} ${y + halfH} Z`;
+};
+
+export const generateCirclePath = (x: number, y: number, diameter: number) => {
+    const r = diameter / 2;
+    // Approximating circle with arcs
+    return `
+        M ${x - r} ${y}
+        A ${r} ${r} 0 1 0 ${x + r} ${y}
+        A ${r} ${r} 0 1 0 ${x - r} ${y}
+    `;
+};
+
 
 // --- PIPE GENERATOR LOGIC ---
 export const generatePipePath = (x: number, y: number, length: number, diameter: number, vertical: boolean = false) => {
@@ -185,7 +222,7 @@ export const generateElbowPath = (centerX: number, centerY: number, diameter: nu
 
 export const MOCK_SEGMENTS: PipeSegment[] = [
     {
-        id: 'SUP-001',
+        id: 'SUP-1',
         name: 'Suporte Inicial',
         type: 'SUPPORT',
         x: 400,
