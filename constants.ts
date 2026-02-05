@@ -1,5 +1,6 @@
 
 
+
 import { PipeSegment, StageStatus } from './types';
 
 // Helper to create default stages
@@ -97,6 +98,18 @@ export const generateCirclePath = (x: number, y: number, diameter: number) => {
         A ${r} ${r} 0 1 0 ${x + r} ${y}
         A ${r} ${r} 0 1 0 ${x - r} ${y}
     `;
+};
+
+export const generateTextPath = (x: number, y: number, text: string, fontSize: number) => {
+    // Create an invisible bounding box path for the text to allow selection
+    // Approx width estimation: 0.6 * fontSize * charCount
+    const width = (text.length * fontSize * 0.6) || 50;
+    const height = fontSize || 12;
+    const halfW = width / 2;
+    const halfH = height / 2;
+    
+    // Return a rectangular box path centered at x,y
+    return `M ${x - halfW} ${y - halfH} L ${x + halfW} ${y - halfH} L ${x + halfW} ${y + halfH} L ${x - halfW} ${y + halfH} Z`;
 };
 
 

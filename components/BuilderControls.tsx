@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Box, RotateCcw, ArrowUpFromLine, ArrowLeftRight, CheckCircle2, XCircle, Copy, Cylinder, CornerDownRight, RefreshCcw, UtilityPole, Hammer, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Move, Droplet, ClipboardCheck, Square, Circle, Flame, Package, MapPin, CalendarDays } from 'lucide-react';
+import { Box, RotateCcw, ArrowUpFromLine, ArrowLeftRight, CheckCircle2, XCircle, Copy, Cylinder, CornerDownRight, RefreshCcw, UtilityPole, Hammer, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Move, Droplet, ClipboardCheck, Square, Circle, Flame, Package, MapPin, CalendarDays, Type } from 'lucide-react';
 import { StageStatus, PipeSegment } from '../types';
 
 interface BuilderControlsProps {
@@ -11,6 +11,7 @@ interface BuilderControlsProps {
   onAddRectangle: () => void;
   onAddCircle: () => void;
   onAddFloatingSupport: () => void; // New
+  onAddText: () => void; // New Text Button
   onReset: () => void;
   selectedSegmentIds: string[]; // Updated prop
   selectedSegmentId: string | null; // Kept for logic if needed (primary selection)
@@ -21,6 +22,12 @@ interface BuilderControlsProps {
   selectedSegmentType?: string;
   selectedSegmentName?: string;
   selectedSegmentDescription?: string;
+  // Text Properties
+  selectedSegmentFontSize?: number;
+  selectedSegmentFontColor?: string;
+  selectedSegmentFontFamily?: string;
+  onUpdateTextStyle?: (style: { fontSize?: number, fontColor?: string, fontFamily?: string }) => void;
+
   onResizeSupport: (deltaWidth: number, deltaHeight: number) => void;
   onCloneSupport?: () => void;
   onRotateSegment?: () => void;
@@ -45,6 +52,7 @@ const BuilderControls: React.FC<BuilderControlsProps> = ({
     onAddRectangle,
     onAddCircle,
     onAddFloatingSupport,
+    onAddText,
     onReset,
     selectedSegmentIds,
     selectedSegmentId,
@@ -54,6 +62,10 @@ const BuilderControls: React.FC<BuilderControlsProps> = ({
     selectedSegmentType,
     selectedSegmentName,
     selectedSegmentDescription,
+    selectedSegmentFontSize,
+    selectedSegmentFontColor,
+    selectedSegmentFontFamily,
+    onUpdateTextStyle,
     onResizeSupport,
     onCloneSupport,
     onRotateSegment,
@@ -250,27 +262,34 @@ const BuilderControls: React.FC<BuilderControlsProps> = ({
         </div>
         
         {/* Basic Shapes */}
-        <div className="grid grid-cols-3 gap-1 mt-1">
+        <div className="grid grid-cols-4 gap-1 mt-1">
              <button 
                 onClick={onAddRectangle}
                 className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-50 text-slate-600 rounded hover:bg-slate-100 border border-dashed border-slate-300 text-[10px] font-bold transition-all"
                 title="Novo Retângulo"
             >
-                <Square size={18} /> Retângulo
+                <Square size={16} /> Retângulo
             </button>
             <button 
                 onClick={onAddCircle}
                 className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-50 text-slate-600 rounded hover:bg-slate-100 border border-dashed border-slate-300 text-[10px] font-bold transition-all"
                 title="Novo Círculo"
             >
-                <Circle size={18} /> Círculo
+                <Circle size={16} /> Círculo
             </button>
             <button 
                 onClick={onAddFloatingSupport}
                 className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-50 text-slate-600 rounded hover:bg-slate-100 border border-dashed border-slate-300 text-[10px] font-bold transition-all"
                 title="Suporte Flutuante"
             >
-                <Package size={18} /> Flutuante
+                <Package size={16} /> Flutuante
+            </button>
+            <button 
+                onClick={onAddText}
+                className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-50 text-slate-600 rounded hover:bg-slate-100 border border-dashed border-slate-300 text-[10px] font-bold transition-all"
+                title="Adicionar Texto"
+            >
+                <Type size={16} /> Texto
             </button>
         </div>
 
@@ -303,21 +322,76 @@ const BuilderControls: React.FC<BuilderControlsProps> = ({
                 {/* Name / Description Fields */}
                 {selectedSegmentId && (
                     <div className="flex flex-col gap-2">
-                        {/* NAME / LOCAL - Single Item Only */}
-                        {selectedSegmentIds.length === 1 && onUpdateSegmentLabel && (
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase">Local / Identificação</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:border-blue-500 text-slate-900 bg-white"
-                                    value={selectedSegmentName || ''}
-                                    onChange={(e) => onUpdateSegmentLabel(selectedSegmentId, e.target.value)}
-                                />
+                        {/* TEXT SPECIFIC CONTROLS */}
+                        {selectedSegmentType === 'TEXT' && onUpdateTextStyle && (
+                            <div className="flex flex-col gap-2 p-2 bg-white rounded border border-slate-200 shadow-sm mb-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase">Estilo do Texto</span>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="text-[9px] text-slate-400 block">Tamanho</label>
+                                        <input 
+                                            type="number" 
+                                            className="w-full text-xs p-1 border border-slate-300 rounded"
+                                            value={selectedSegmentFontSize || 14}
+                                            onChange={(e) => onUpdateTextStyle({ fontSize: parseInt(e.target.value) })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] text-slate-400 block">Cor</label>
+                                        <div className="flex gap-1">
+                                            <input 
+                                                type="color" 
+                                                className="w-full h-6 border-0 p-0 rounded cursor-pointer"
+                                                value={selectedSegmentFontColor || '#ffffff'}
+                                                onChange={(e) => onUpdateTextStyle({ fontColor: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-[9px] text-slate-400 block">Fonte</label>
+                                    <select 
+                                        className="w-full text-xs p-1 border border-slate-300 rounded bg-white"
+                                        value={selectedSegmentFontFamily || 'Inter'}
+                                        onChange={(e) => onUpdateTextStyle({ fontFamily: e.target.value })}
+                                    >
+                                        <option value="Inter">Padrão (Inter)</option>
+                                        <option value="Arial">Arial</option>
+                                        <option value="Courier New">Courier New</option>
+                                        <option value="Times New Roman">Times New Roman</option>
+                                        <option value="Verdana">Verdana</option>
+                                        <option value="Impact">Impact</option>
+                                    </select>
+                                </div>
                             </div>
                         )}
 
-                        {/* DESCRIPTION / INFO - Multi Item Support */}
-                        {onUpdateSegmentDescription && (
+                        {/* NAME / LOCAL / TEXT CONTENT */}
+                        {selectedSegmentIds.length === 1 && onUpdateSegmentLabel && (
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">
+                                    {selectedSegmentType === 'TEXT' ? 'Conteúdo do Texto' : 'Local / Identificação'}
+                                </label>
+                                {selectedSegmentType === 'TEXT' ? (
+                                    <textarea 
+                                        className="w-full text-sm p-1.5 border border-slate-300 rounded focus:outline-none focus:border-blue-500 text-slate-900 bg-white"
+                                        rows={3}
+                                        value={selectedSegmentName || ''}
+                                        onChange={(e) => onUpdateSegmentLabel(selectedSegmentId, e.target.value)}
+                                    />
+                                ) : (
+                                    <input 
+                                        type="text" 
+                                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:border-blue-500 text-slate-900 bg-white"
+                                        value={selectedSegmentName || ''}
+                                        onChange={(e) => onUpdateSegmentLabel(selectedSegmentId, e.target.value)}
+                                    />
+                                )}
+                            </div>
+                        )}
+
+                        {/* DESCRIPTION / INFO - Multi Item Support (Hide for Text to save space) */}
+                        {onUpdateSegmentDescription && selectedSegmentType !== 'TEXT' && (
                             <div className="flex flex-col gap-1">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase">Informações Adicionais</label>
                                 <textarea 
@@ -464,21 +538,23 @@ const BuilderControls: React.FC<BuilderControlsProps> = ({
                     </div>
                 )}
 
-                {/* Dimensions Controls */}
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                    <button onClick={() => onResizeSupport(0, 2)} className="bg-white border hover:bg-slate-100 rounded p-1 text-xs flex flex-col items-center">
-                        <ArrowUpFromLine size={14} className="mb-1 text-blue-500"/> + Altura
-                    </button>
-                    <button onClick={() => onResizeSupport(0, -2)} className="bg-white border hover:bg-slate-100 rounded p-1 text-xs flex flex-col items-center">
-                        <ArrowUpFromLine size={14} className="mb-1 rotate-180 text-blue-500"/> - Altura
-                    </button>
-                    <button onClick={() => onResizeSupport(2, 0)} className="bg-white border hover:bg-slate-100 rounded p-1 text-xs flex flex-col items-center">
-                        <ArrowLeftRight size={14} className="mb-1 text-orange-500"/> + Comp.
-                    </button>
-                    <button onClick={() => onResizeSupport(-2, 0)} className="bg-white border hover:bg-slate-100 rounded p-1 text-xs flex flex-col items-center">
-                        <ArrowLeftRight size={14} className="mb-1 text-orange-500"/> - Comp.
-                    </button>
-                </div>
+                {/* Dimensions Controls (Not for Text) */}
+                {selectedSegmentType !== 'TEXT' && (
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                        <button onClick={() => onResizeSupport(0, 2)} className="bg-white border hover:bg-slate-100 rounded p-1 text-xs flex flex-col items-center">
+                            <ArrowUpFromLine size={14} className="mb-1 text-blue-500"/> + Altura
+                        </button>
+                        <button onClick={() => onResizeSupport(0, -2)} className="bg-white border hover:bg-slate-100 rounded p-1 text-xs flex flex-col items-center">
+                            <ArrowUpFromLine size={14} className="mb-1 rotate-180 text-blue-500"/> - Altura
+                        </button>
+                        <button onClick={() => onResizeSupport(2, 0)} className="bg-white border hover:bg-slate-100 rounded p-1 text-xs flex flex-col items-center">
+                            <ArrowLeftRight size={14} className="mb-1 text-orange-500"/> + Comp.
+                        </button>
+                        <button onClick={() => onResizeSupport(-2, 0)} className="bg-white border hover:bg-slate-100 rounded p-1 text-xs flex flex-col items-center">
+                            <ArrowLeftRight size={14} className="mb-1 text-orange-500"/> - Comp.
+                        </button>
+                    </div>
+                )}
 
                 {/* Fine Positioning Controls */}
                 <div className="mt-1 bg-slate-50 p-2 rounded border border-slate-100">

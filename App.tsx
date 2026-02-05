@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import PipelineVisualizer from './components/PipelineVisualizer';
 import ControlPanel from './components/ControlPanel'; // ControlPanel hidden but import kept for future
 import BuilderControls from './components/BuilderControls';
-import { MOCK_SEGMENTS, createDefaultStages, generateRackPath, generatePipePath, generateElbowPath, generateCantileverPath, generateRectanglePath, generateCirclePath, generateFloatingSupportPath, generateZonePath } from './constants';
+import { MOCK_SEGMENTS, createDefaultStages, generateRackPath, generatePipePath, generateElbowPath, generateCantileverPath, generateRectanglePath, generateCirclePath, generateFloatingSupportPath, generateZonePath, generateTextPath } from './constants';
 import { PipeSegment, StageStatus } from './types';
 import { LayoutDashboard, FileText, CalendarClock, BookOpen } from 'lucide-react';
 import { getGeneralProjectReport, getDailyProgressReport } from './services/geminiService';
@@ -92,6 +92,14 @@ const App: React.FC = () => {
   const handleUpdateSegmentLabel = (id: string, newName: string) => {
       setSegments(prev => prev.map(seg => {
           if (seg.id !== id) return seg;
+          // For Text type, we also need to update the coordinates (bbox) when text length changes
+          if (seg.type === 'TEXT') {
+              return { 
+                  ...seg, 
+                  name: newName,
+                  coordinates: generateTextPath(seg.x, seg.y, newName, seg.fontSize || 14)
+              };
+          }
           return { ...seg, name: newName };
       }));
   }
@@ -104,6 +112,25 @@ const App: React.FC = () => {
           }
           if (seg.id === id) return { ...seg, description: newDesc };
           return seg;
+      }));
+  }
+
+  const handleUpdateTextStyle = (id: string, style: { fontSize?: number, fontColor?: string, fontFamily?: string }) => {
+      setSegments(prev => prev.map(seg => {
+          if (seg.id !== id) return seg;
+          
+          const newSize = style.fontSize || seg.fontSize || 14;
+          // Update coordinates if size changes to keep bbox correct
+          let newCoords = seg.coordinates;
+          if (style.fontSize) {
+             newCoords = generateTextPath(seg.x, seg.y, seg.name, newSize);
+          }
+
+          return {
+              ...seg,
+              ...style,
+              coordinates: newCoords
+          };
       }));
   }
 
@@ -244,7 +271,8 @@ const App: React.FC = () => {
                              segToClone.type === 'CANTILEVER' ? 'CANT' :
                              segToClone.type === 'FLOATING' ? 'FLOAT' :
                              segToClone.type === 'RECTANGLE' ? 'RECT' :
-                             segToClone.type === 'CIRCLE' ? 'CIRC' : 'ITEM';
+                             segToClone.type === 'CIRCLE' ? 'CIRC' :
+                             segToClone.type === 'TEXT' ? 'TXT' : 'ITEM';
 
           const newId = `${typePrefix}-${counter}`;
           counter++;
@@ -262,6 +290,7 @@ const App: React.FC = () => {
           if (segToClone.type === 'RECTANGLE') newPath = generateRectanglePath(newX, newY, width, height);
           if (segToClone.type === 'ZONE') newPath = generateZonePath(newX, newY, width, height);
           if (segToClone.type === 'CIRCLE') newPath = generateCirclePath(newX, newY, width);
+          if (segToClone.type === 'TEXT') newPath = generateTextPath(newX, newY, segToClone.name, segToClone.fontSize || 14);
           
           if (segToClone.type === 'PIPE') {
               const isVertical = segToClone.description.includes("VERTICAL");
@@ -276,7 +305,7 @@ const App: React.FC = () => {
               id: newId,
               x: newX,
               y: newY,
-              name: `${segToClone.name} (Cópia)`,
+              name: `${segToClone.name}`,
               coordinates: newPath,
               joints: segToClone.joints ? [...segToClone.joints] : undefined,
               stages: createDefaultStages()
@@ -399,6 +428,30 @@ const App: React.FC = () => {
           length: defDia.toString(), // Length = Diameter
           weight: defDia.toString(),
           description: 'Área Circular',
+          stages: createDefaultStages()
+      };
+      setSegments([...segments, newSeg]);
+      setSelectedIds([newId]);
+      setSegmentCount(c => c + 1);
+  };
+
+  const handleAddText = () => {
+      const x = 400;
+      const y = 300;
+      const newId = `TXT-${segmentCounter}`;
+      const initialText = "Texto Livre";
+      const fontSize = 24;
+
+      const newSeg: PipeSegment = {
+          id: newId,
+          name: initialText,
+          type: 'TEXT',
+          x, y,
+          coordinates: generateTextPath(x, y, initialText, fontSize),
+          description: 'Anotação',
+          fontSize: fontSize,
+          fontColor: '#ffffff',
+          fontFamily: 'Inter',
           stages: createDefaultStages()
       };
       setSegments([...segments, newSeg]);
@@ -700,6 +753,9 @@ const App: React.FC = () => {
           else if (seg.type === 'CIRCLE') {
               newCoords = generateCirclePath(newX, newY, parseFloat(seg.length||"100"));
           }
+          else if (seg.type === 'TEXT') {
+              newCoords = generateTextPath(newX, newY, seg.name, seg.fontSize || 14);
+          }
 
           return { ...seg, x: newX, y: newY, coordinates: newCoords };
       }));
@@ -709,7 +765,7 @@ const App: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // FIX: Check if user is typing in an Input field. If so, ignore shortcuts.
       const activeElement = document.activeElement;
-      const isInputActive = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA');
+      const isInputActive = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'SELECT');
       if (isInputActive) return;
 
       // Only trigger if something is selected
@@ -814,6 +870,7 @@ const App: React.FC = () => {
                 onAddRectangle={handleAddRectangle}
                 onAddCircle={handleAddCircle}
                 onAddFloatingSupport={handleAddFloatingSupport}
+                onAddText={handleAddText} // NEW
                 onReset={handleResetProject}
                 selectedSegmentIds={selectedIds}
                 selectedSegmentId={primarySelectedId}
@@ -824,6 +881,12 @@ const App: React.FC = () => {
                 selectedSegmentType={selectedSegment?.type}
                 selectedSegmentName={selectedSegment?.name}
                 selectedSegmentDescription={selectedSegment?.description}
+                // Text Props
+                selectedSegmentFontSize={selectedSegment?.fontSize}
+                selectedSegmentFontColor={selectedSegment?.fontColor}
+                selectedSegmentFontFamily={selectedSegment?.fontFamily}
+                onUpdateTextStyle={(style) => primarySelectedId && handleUpdateTextStyle(primarySelectedId, style)}
+
                 hasPipeOrElbowSelected={hasPipeOrElbowSelected}
                 segments={segments} // Added segments prop
                 onResizeSupport={handleResizeSupport}

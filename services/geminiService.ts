@@ -100,6 +100,7 @@ export const getGeneralProjectReport = async (segments: PipeSegment[]): Promise<
     // Listas para detalhamento
     const blockedItems: string[] = [];
     const activeItems: string[] = [];
+    const completedItems: string[] = [];
 
     reportSegments.forEach(seg => {
         const relevantStages = getRelevantStages(seg);
@@ -110,9 +111,13 @@ export const getGeneralProjectReport = async (segments: PipeSegment[]): Promise<
         const isNotStarted = relevantStages.every(s => s.status === StageStatus.NOT_STARTED);
 
         // Formatação Padrão: [ID] LOCAL | INFO
-        const itemInfo = `[ID: ${seg.id}] Local: ${seg.name} ${seg.description ? `| Info: ${seg.description}` : ''}`;
+        const itemInfo = `[ID: ${seg.id}] ${seg.name} ${seg.description ? `(${seg.description})` : ''}`;
 
-        if (isAllComplete) totalCompleted++;
+        if (isAllComplete) {
+            totalCompleted++;
+            // AQUI ESTÁ A MUDANÇA: Lista simples para concluídos
+            completedItems.push(`- ${itemInfo}: Concluído`);
+        }
         else if (hasBlock) {
             totalBlocked++;
             const reasons = relevantStages.filter(s => s.status === StageStatus.BLOCKED || s.status === StageStatus.ISSUE).map(s => s.label).join(', ');
@@ -124,9 +129,6 @@ export const getGeneralProjectReport = async (segments: PipeSegment[]): Promise<
             activeItems.push(`- ${itemInfo}\n  >> Atividade: ${acts}`);
         }
         else if (!isNotStarted) {
-             // Caso misto (alguns completos, outros não iniciados, mas sem bloqueio ou progresso ativo)
-             // Ex: Suporte montado, mas esperando solda (que está NOT_STARTED).
-             // Vamos considerar "Em Andamento" para fins de relatório se algo já foi feito.
              const done = relevantStages.filter(s => s.status === StageStatus.COMPLETED).map(s => s.label).join(', ');
              totalInProgress++;
              activeItems.push(`- ${itemInfo}\n  >> Concluído Parcialmente: ${done}`);
@@ -141,32 +143,28 @@ export const getGeneralProjectReport = async (segments: PipeSegment[]): Promise<
 Data de Emissão: ${today}
 --------------------------------------------------
 
-1. RESUMO EXECUTIVO (AVANÇO FÍSICO)
+1. RESUMO EXECUTIVO
 --------------------------------------------------
-Este relatório contabiliza apenas os itens físicos ativos no projeto atual.
-Total de Itens Planejados: ${totalItems}
-Progresso Global Estimado: ${percentComplete}%
+Total de Itens: ${totalItems} | Avanço Físico: ${percentComplete}%
 
 [🟢] Concluídos: ${totalCompleted}
 [🟡] Em Andamento: ${totalInProgress}
-[🔴] Com Pendências/Bloqueios: ${totalBlocked}
-[⚪] Não Iniciados: ${totalNotStarted}
+[🔴] Pendentes/Bloqueados: ${totalBlocked}
 
 
-2. PONTOS DE ATENÇÃO (CRÍTICO)
+2. ITENS CONCLUÍDOS (ENTREGUES)
+--------------------------------------------------
+${completedItems.length > 0 ? completedItems.join('\n') : "Nenhum item totalmente concluído."}
+
+
+3. PONTOS DE ATENÇÃO (CRÍTICO)
 --------------------------------------------------
 ${blockedItems.length > 0 ? blockedItems.join('\n') : "Nenhum bloqueio registrado no momento."}
 
 
-3. FRENTES DE TRABALHO ATIVAS
+4. FRENTES DE TRABALHO ATIVAS
 --------------------------------------------------
 ${activeItems.length > 0 ? activeItems.join('\n') : "Nenhuma frente ativa no momento."}
-
-
-4. CONSIDERAÇÕES DO PLANEJAMENTO
---------------------------------------------------
-Este relatório reflete a posição física atualizada do banco de dados do projeto. 
-Itens marcados como bloqueados devem ter prioridade na resolução pelo setor de Qualidade ou Engenharia.
 `;
 }
 
@@ -174,7 +172,7 @@ Itens marcados como bloqueados devem ter prioridade na resolução pelo setor de
 export const getDailyProgressReport = async (segments: PipeSegment[]): Promise<string> => {
    const today = new Date().toLocaleDateString('pt-BR');
    
-   // FILTRAGEM: Considera apenas itens técnicos reais
+   // FILTRAGEM
    const reportSegments = getReportableSegments(segments);
 
    // Estrutura de Agrupamento
@@ -184,30 +182,48 @@ export const getDailyProgressReport = async (segments: PipeSegment[]): Promise<s
    // Processamento dos Dados
    reportSegments.forEach(seg => {
        const itemInfo = `[ID: ${seg.id}] ${seg.name} ${seg.description ? `(${seg.description})` : ''}`;
-       
-       // Usa todas as etapas para o diário, pois mesmo 'irrelevant' pode ter sido logado se o user quis
-       // Mas idealmente filtramos para não poluir o backlog
-       const stagesToCheck = getRelevantStages(seg);
+       const relevantStages = getRelevantStages(seg);
+       const isAllComplete = relevantStages.every(s => s.status === StageStatus.COMPLETED);
 
-       stagesToCheck.forEach(stage => {
+       // Agrupamento Temporário por Data para este Segmento
+       const segmentUpdatesByDate: Record<string, string[]> = {};
+
+       relevantStages.forEach(stage => {
            if (stage.status !== StageStatus.NOT_STARTED) {
                if (stage.date) {
                    const dateKey = stage.date.split('-').reverse().join('/');
-                   
-                   if (!history[dateKey]) history[dateKey] = [];
-                   
-                   const statusIcon = stage.status === StageStatus.COMPLETED ? '[CONCLUÍDO]' : '[INICIADO]';
-                   const lineItem = `${statusIcon} ${itemInfo} - ${stage.label}`;
-                   
-                   history[dateKey].push(lineItem);
+                   if (!segmentUpdatesByDate[dateKey]) segmentUpdatesByDate[dateKey] = [];
+                   segmentUpdatesByDate[dateKey].push(stage.label);
                } else {
-                   // Sem data definida
+                   // Sem data
                    if (!history['DATA NÃO INFORMADA']) history['DATA NÃO INFORMADA'] = [];
                    history['DATA NÃO INFORMADA'].push(`[STATUS: ${stage.status}] ${itemInfo} - ${stage.label}`);
                }
            } else {
                // Backlog
-               backlog.push(`${itemInfo}: ${stage.label}`);
+               if (!isAllComplete) {
+                    backlog.push(`${itemInfo}`);
+               }
+           }
+       });
+
+       // Processar Agrupamento e Adicionar ao Histórico Global
+       Object.keys(segmentUpdatesByDate).forEach(date => {
+           const updates = segmentUpdatesByDate[date];
+           if (!history[date]) history[date] = [];
+
+           // Lógica de "Limpeza":
+           // Se o item está TODO concluído E houve atualizações nesta data (provavelmente o botão "Pronto" foi clicado)
+           // Exibe apenas UMA linha resumida.
+           if (isAllComplete && updates.length >= 2) {
+               history[date].push(`✅ [CONCLUÍDO] ${itemInfo}: Item Finalizado`);
+           } else {
+               // Caso contrário, lista as etapas individuais
+               updates.forEach(upd => {
+                    // Se o item está concluído, mas foi feito passo a passo em dias diferentes, ainda mostra "Concluído" no final
+                    const icon = isAllComplete ? '✅' : '▶️'; 
+                    history[date].push(`${icon} ${itemInfo}: ${upd}`);
+               });
            }
        });
    });
@@ -228,9 +244,11 @@ export const getDailyProgressReport = async (segments: PipeSegment[]): Promise<s
        historyText += history[date].join('\n') + "\n";
    });
 
-   const backlogCount = backlog.length;
-   const backlogPreview = backlog.slice(0, 15).map(i => `- ${i}`).join('\n');
-   const backlogMore = backlogCount > 15 ? `\n... e mais ${backlogCount - 15} atividades.` : "";
+   // Limpar backlog duplicado (mostrar apenas nomes únicos de itens pendentes)
+   const uniqueBacklog = Array.from(new Set(backlog));
+   const backlogCount = uniqueBacklog.length;
+   const backlogPreview = uniqueBacklog.slice(0, 20).map(i => `- ${i}`).join('\n');
+   const backlogMore = backlogCount > 20 ? `\n... e mais ${backlogCount - 20} itens.` : "";
 
    return `DIÁRIO DE OBRA (RDO) - CONSOLIDADO
 Gerado em: ${today}
@@ -241,8 +259,8 @@ ${historyText || "Nenhuma atividade executada com data registrada."}
 
 ==================================================
 
-SALDO DE ATIVIDADES (BACKLOG)
-Total Pendente: ${backlogCount} atividades
+SALDO DE ITENS PENDENTES (BACKLOG)
+Total de Itens Não Finalizados: ${backlogCount}
 
 ${backlogPreview}${backlogMore}
 

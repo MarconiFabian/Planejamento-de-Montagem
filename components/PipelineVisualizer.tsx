@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { PipeSegment, StageStatus } from '../types';
+import { ZoomIn, ZoomOut } from 'lucide-react';
 
 interface PipelineVisualizerProps {
   segments: PipeSegment[];
@@ -20,6 +21,7 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
     onResizeSegment
 }) => {
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [scale, setScale] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [draggedSegment, setDraggedSegment] = useState<string | null>(null);
   const [hoveredSegmentId, setHoveredSegmentId] = useState<string | null>(null);
@@ -30,6 +32,8 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
   const [selectionBox, setSelectionBox] = useState<{startX: number, startY: number, currentX: number, currentY: number} | null>(null);
 
   const lastMousePos = useRef({ x: 0, y: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null); // Added ref for the container
 
   // Monitor Alt Key
   useEffect(() => {
@@ -47,12 +51,59 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
     };
   }, []);
 
+  // Zoom Handler (Centered)
+  const handleZoom = (delta: number) => {
+      if (!svgRef.current) return;
+      const rect = svgRef.current.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+
+      const prevScale = scale;
+      const newScale = Math.min(Math.max(prevScale + delta, 0.2), 3); // Limit 20% to 300%
+      
+      // Adjust Pan to keep center fixed
+      // Formula: P_new = Center - (Center - P_old) * (Scale_new / Scale_old)
+      const newPanX = centerX - ((centerX - pan.x) / prevScale) * newScale;
+      const newPanY = centerY - ((centerY - pan.y) / prevScale) * newScale;
+
+      setScale(newScale);
+      setPan({x: newPanX, y: newPanY});
+  };
+
+  // Add Wheel Event Listener for Ctrl + Scroll Zoom
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+        if (e.ctrlKey) {
+            e.preventDefault();
+            // Negative deltaY means scrolling up (Zoom In), Positive means scrolling down (Zoom Out)
+            const delta = e.deltaY < 0 ? 0.1 : -0.1;
+            handleZoom(delta);
+        }
+    };
+
+    const container = containerRef.current;
+    if (container) {
+        container.addEventListener('wheel', handleWheel, { passive: false });
+    }
+
+    return () => {
+        if (container) {
+            container.removeEventListener('wheel', handleWheel);
+        }
+    };
+  }, [scale, pan]); // Re-attach when state changes to capture correct closure values
+
   const handleMouseDown = (e: React.MouseEvent) => {
     // If Alt is pressed, start Window Selection
     if (isAltPressed) {
-        // Convert screen coordinates to World Coordinates (taking Pan into account)
-        const worldX = e.clientX - pan.x;
-        const worldY = e.clientY - pan.y;
+        // Convert screen coordinates to World Coordinates (taking Pan and Scale into account)
+        const rect = svgRef.current?.getBoundingClientRect();
+        const offsetX = rect ? rect.left : 0;
+        const offsetY = rect ? rect.top : 0;
+        
+        const worldX = (e.clientX - offsetX - pan.x) / scale;
+        const worldY = (e.clientY - offsetY - pan.y) / scale;
+
         setSelectionBox({
             startX: worldX,
             startY: worldY,
@@ -72,14 +123,23 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
   const handleMouseMove = (e: React.MouseEvent) => {
     // 0. Update Selection Box
     if (selectionBox) {
-        const worldX = e.clientX - pan.x;
-        const worldY = e.clientY - pan.y;
+        const rect = svgRef.current?.getBoundingClientRect();
+        const offsetX = rect ? rect.left : 0;
+        const offsetY = rect ? rect.top : 0;
+
+        const worldX = (e.clientX - offsetX - pan.x) / scale;
+        const worldY = (e.clientY - offsetY - pan.y) / scale;
         setSelectionBox(prev => prev ? ({ ...prev, currentX: worldX, currentY: worldY }) : null);
         return;
     }
 
-    const deltaX = e.clientX - lastMousePos.current.x;
-    const deltaY = e.clientY - lastMousePos.current.y;
+    const rawDeltaX = e.clientX - lastMousePos.current.x;
+    const rawDeltaY = e.clientY - lastMousePos.current.y;
+    
+    // Scaled deltas for world movement
+    const deltaX = rawDeltaX / scale;
+    const deltaY = rawDeltaY / scale;
+
     lastMousePos.current = { x: e.clientX, y: e.clientY };
 
     // 1. Handle Resize Drag
@@ -108,9 +168,9 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
         return;
     }
 
-    // 3. Handle Pan
+    // 3. Handle Pan (Pan operates in screen pixels, so use rawDelta)
     if (isPanning) {
-        setPan(prev => ({ x: prev.x + deltaX, y: prev.y + deltaY }));
+        setPan(prev => ({ x: prev.x + rawDeltaX, y: prev.y + rawDeltaY }));
     }
   };
 
@@ -133,6 +193,12 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
                 
                 if (seg.length) segHalfW = parseFloat(seg.length) / 2;
                 if (seg.weight) segHalfH = parseFloat(seg.weight) / 2;
+                
+                // For Text, use a default box if dimensions aren't clear
+                if (seg.type === 'TEXT') {
+                   segHalfW = (seg.name.length * (seg.fontSize || 14) * 0.6) / 2;
+                   segHalfH = (seg.fontSize || 14) / 2;
+                }
                 
                 const segMinX = seg.x - segHalfW;
                 const segMaxX = seg.x + segHalfW;
@@ -286,8 +352,8 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
 
       const Handle = ({ x, y, cursor, type }: {x: number, y: number, cursor: string, type: string}) => (
           <circle 
-            cx={x} cy={y} r={5} 
-            fill="white" stroke="#3b82f6" strokeWidth={2}
+            cx={x} cy={y} r={5 / scale} // Handle size scales inversely so it looks constant size
+            fill="white" stroke="#3b82f6" strokeWidth={2 / scale}
             style={{ cursor }}
             onMouseDown={(e) => handleHandleMouseDown(e, segment.id, type)}
           />
@@ -330,6 +396,7 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
 
   return (
     <div 
+        ref={containerRef}
         className={`w-full h-full bg-[#1e293b] rounded-xl overflow-hidden relative shadow-2xl border border-slate-600 ${isAltPressed ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -338,7 +405,7 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
     >
       <div className="absolute top-4 left-4 z-10 pointer-events-none select-none">
         <h2 className="text-white text-xl font-bold uppercase tracking-wider drop-shadow-md">Implantação de Suportes</h2>
-        <p className="text-slate-300 text-sm">Tela Infinita: Arraste o fundo para mover. Alt + Arrastar para Seleção em Caixa.</p>
+        <p className="text-slate-300 text-sm">Tela Infinita: Arraste para mover. Alt + Arrastar para Seleção. Ctrl + Scroll para Zoom.</p>
         <div className="mt-2 flex flex-col gap-2">
             <div className="flex gap-4 text-[10px] text-white bg-slate-800/80 p-2 rounded backdrop-blur-sm inline-flex border border-slate-700">
                 <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm border border-slate-600 bg-[#78909c]"></span> Pendente</span>
@@ -364,13 +431,35 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
         </div>
       </div>
 
+      {/* Zoom Controls */}
+      <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
+        <button 
+            onClick={() => handleZoom(0.2)} 
+            className="p-2 bg-slate-800 text-white rounded-lg shadow hover:bg-slate-700 transition-colors border border-slate-700"
+            title="Zoom In (+)"
+        >
+            <ZoomIn size={20} />
+        </button>
+        <button 
+            onClick={() => handleZoom(-0.2)} 
+            className="p-2 bg-slate-800 text-white rounded-lg shadow hover:bg-slate-700 transition-colors border border-slate-700"
+            title="Zoom Out (-)"
+        >
+            <ZoomOut size={20} />
+        </button>
+        <div className="bg-slate-800 text-white text-xs px-2 py-1 rounded text-center font-mono border border-slate-700 select-none">
+            {Math.round(scale * 100)}%
+        </div>
+      </div>
+
       <svg 
+        ref={svgRef}
         width="100%" 
         height="100%" 
         style={{ touchAction: 'none' }}
       >
         <defs>
-            <pattern id="floorGrid" x={pan.x} y={pan.y} width="100" height="50" patternUnits="userSpaceOnUse">
+            <pattern id="floorGrid" x={pan.x} y={pan.y} width="100" height="50" patternUnits="userSpaceOnUse" patternTransform={`scale(${scale})`}>
                 <path d="M 100 0 L 0 0 0 50" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1"/>
             </pattern>
             <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
@@ -387,7 +476,7 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
 
         <rect width="100%" height="100%" fill="url(#floorGrid)" />
 
-        <g transform={`translate(${pan.x}, ${pan.y})`}>
+        <g transform={`translate(${pan.x}, ${pan.y}) scale(${scale})`}>
             
             {segments.map((segment) => {
                 const isSelected = selectedSegmentIds.includes(segment.id);
@@ -457,6 +546,7 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
                                 stroke="#cbd5e1"
                                 strokeWidth="2"
                                 rx="6"
+                                vectorEffect="non-scaling-stroke"
                              />
 
                             {/* Label Text */}
@@ -502,6 +592,45 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
                             {isSelected && renderResizeHandles(segment)}
                         </g>
                     );
+                }
+
+                if (segment.type === 'TEXT') {
+                     return (
+                        <g 
+                            key={segment.id} 
+                            onMouseDown={(e) => handleSegmentMouseDown(e, segment.id)}
+                            onMouseEnter={() => setHoveredSegmentId(segment.id)}
+                            onMouseLeave={() => setHoveredSegmentId(null)}
+                            className="cursor-move"
+                        >
+                            {/* Invisible hit box using the coordinates path */}
+                            <path 
+                                d={segment.coordinates} 
+                                fill="transparent" 
+                                stroke={isSelected ? "#3b82f6" : "transparent"} 
+                                strokeWidth="1"
+                                strokeDasharray={isSelected ? "4 4" : ""}
+                            />
+                            
+                            {/* Actual Text */}
+                            <text
+                                x={segment.x}
+                                y={segment.y}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fill={segment.fontColor || 'white'}
+                                fontSize={segment.fontSize || 14}
+                                fontFamily={segment.fontFamily || 'Inter, sans-serif'}
+                                className="select-none pointer-events-none"
+                                style={{ 
+                                    textShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                                    fontWeight: '500'
+                                }}
+                            >
+                                {segment.name}
+                            </text>
+                        </g>
+                     );
                 }
 
                 return (
@@ -612,6 +741,7 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({
                     strokeWidth="1"
                     strokeDasharray="4 4"
                     className="pointer-events-none"
+                    vectorEffect="non-scaling-stroke"
                 />
             )}
 

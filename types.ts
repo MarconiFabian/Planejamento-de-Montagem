@@ -19,13 +19,18 @@ export interface PipelineStage {
 export interface PipeSegment {
   id: string;
   name: string;
-  type: 'PIPE' | 'ELBOW' | 'VALVE' | 'SUPPORT' | 'CANTILEVER' | 'RECTANGLE' | 'CIRCLE' | 'FLOATING' | 'ZONE';
+  type: 'PIPE' | 'ELBOW' | 'VALVE' | 'SUPPORT' | 'CANTILEVER' | 'RECTANGLE' | 'CIRCLE' | 'FLOATING' | 'ZONE' | 'TEXT';
   x: number; // Central X coordinate
   y: number; // Central Y coordinate
   coordinates: string; // SVG path data (generated from x,y)
   length?: string; // e.g., "6m" or Width
   weight?: string; // e.g., "250kg" or Height
   description: string;
+  // Text Styling Properties
+  fontSize?: number;
+  fontColor?: string;
+  fontFamily?: string;
+  
   joints?: StageStatus[]; // New: Independent weld status for each joint [Joint1, Joint2]
   stages: {
     scaffolding: PipelineStage;
